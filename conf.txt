@@ -1,0 +1,2 @@
+SUBREDDIT_LIST = worldnews , funny
+HOUR_DELAY = 25
