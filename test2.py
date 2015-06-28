@@ -11,6 +11,8 @@ from pprint import pprint, pformat
 ##                                                                       ##
 ###########################################################################
 
+#This is a comment
+
 #Global Variables
 PID_FILE_NAME = "./tmp/pidfiles/mydaemon2.pid" # Default value
 SUBREDDIT_LIST = ["worldnews"] # Default value
@@ -137,7 +139,7 @@ try:
         f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","a")
         for s in subreddit.get_new(limit=100):
             if not ("t3_" + str(s.id)) in lines_check:
-                os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/"+str(s.id))
+                os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
                 f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
         f.close()
         
