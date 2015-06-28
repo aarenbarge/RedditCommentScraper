@@ -26,34 +26,64 @@ STATE_lines_to_write = []
 
 def write_submission(sub):
     # SHOULD CHECK WHETHER IT HAS BEEN WRITTEN BEFORE
+    print "starting to write submission\n" ###
     global STATE_current_subreddit
     if os.path.isfile("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt"):
+        print "exists already\n" ###
         return
     else:
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("INPROGRESS")
         f.close()
+        print "write the status file\n" ###
     try:
         #write a generic file
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/pprint.txt","w")
         f.write(pformat(vars(sub)))
         f.close()
+        print "printed the pprint\n" ###
+        
+        l = []
+        print "making the new directory\n" ###
+        os.makedirs("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments")
+        print "getting initial comments\n" ###
+        for comment in praw.helpers.flatten_tree(sub.comments):
+            print "1\n"
+            if type(comment) is praw.objects.MoreComments:
+                l.append(comment)
+                print "2\n"
+            else:
+                print "3\n"
+                f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments/" + str(comment.id) + ".txt","w")
+                f.write(pformat(vars(comment)))
+                f.close()
+                print "4\n"
+                
+        print l
 
-        #write the karma file
-        f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/score.txt","w")
-        f.write(str(sub.score))
-        f.close()
-        
-        #
-        # WRITE OTHERS HERE! ALL MY DATA
-        #
-        
+        while len(l) > 0:
+            print "5\n"
+            a = l[0]
+            l = l[1:]
+            for comment in praw.helpers.flatten_tree(a.comments()):
+                print "6\n"
+                if not type(comment) is praw.objects.MoreComments:
+                    print "7\n"
+                    f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments/" + str(comment.id) + ".txt","w")
+                    f.write(pformat(vars(comment)))
+                    f.close()
+                    print "8\n"
+                else:
+                    print "9\n"
+                    l.append(comment)
+        print "10\n"
         #wrap up
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("FINISHED")
         f.close()
         
     except:
+        print "failed\n"
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("INCOMPLETE")
         f.close()
