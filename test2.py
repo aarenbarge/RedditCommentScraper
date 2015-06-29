@@ -1,9 +1,9 @@
 import os
 import sys
 import praw #need to install this on the server!
-#temporary testing imports
 import time
 from pprint import pprint, pformat
+import shutil
 
 ###########################################################################
 ##                                                                       ##
@@ -23,70 +23,68 @@ POST_HOUR_DELAY = 24
 STATE_current_subreddit = ""
 STATE_current_list_number = 0
 STATE_lines_to_write = []
+STATE_current_count = 0
+STATE_cleaned = 0
+STATE_most_recent_id = ""
+
+def cleanup():
+    global STATE_cleaned
+    global STATE_current_subreddit
+    global STATE_current_count
+    
+    if STATE_cleaned != 0:
+        return
+    STATE_cleaned = 1   
+    f = open("./data/"+str(STATE_current_subreddit) + "/bin/start.txt","w")
+    f.write(str(STATE_current_list_number+STATE_current_count))
+    f.close()
+    os.remove(PID_FILE_NAME)
+    sys.exit()
 
 def write_submission(sub):
     # SHOULD CHECK WHETHER IT HAS BEEN WRITTEN BEFORE
-    print "starting to write submission\n" ###
     global STATE_current_subreddit
+    
     if os.path.isfile("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt"):
-        print "exists already\n" ###
         return
     else:
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("INPROGRESS")
         f.close()
-        print "write the status file\n" ###
     try:
         #write a generic file
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/pprint.txt","w")
         f.write(pformat(vars(sub)))
         f.close()
-        print "printed the pprint\n" ###
         
         l = []
-        print "making the new directory\n" ###
         os.makedirs("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments")
-        print "getting initial comments\n" ###
         for comment in praw.helpers.flatten_tree(sub.comments):
-            print "1\n"
             if type(comment) is praw.objects.MoreComments:
-                l.append(comment)
-                print "2\n"
+                if comment.count > 20:
+                    l.append(comment)
             else:
-                print "3\n"
                 f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments/" + str(comment.id) + ".txt","w")
                 f.write(pformat(vars(comment)))
                 f.close()
-                print "4\n"
-                
-        print l
 
         while len(l) > 0:
-            print "5\n"
             a = l[0]
             l = l[1:]
             for comment in praw.helpers.flatten_tree(a.comments()):
-                print "6\n"
                 if not type(comment) is praw.objects.MoreComments:
-                    print "7\n"
                     f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/comments/" + str(comment.id) + ".txt","w")
                     f.write(pformat(vars(comment)))
                     f.close()
-                    print "8\n"
                 else:
-                    print "9\n"
-                    l.append(comment)
-        print "10\n"
-        #wrap up
+                    if comment.count > 20:
+                        l.append(comment)
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("FINISHED")
         f.close()
         
     except:
-        print "failed\n"
-        f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
-        f.write("INCOMPLETE")
-        f.close()
+        cleanup()
     
 def get_configuration():
     for line in open('conf.txt', 'r').read().split('\n'):
@@ -131,14 +129,14 @@ else:
     file(PID_FILE_NAME, 'w').write(pid)
 
 try:                                                                                                         
-    print POST_HOUR_DELAY
+    
     get_configuration()                                                                                                                                                
     r = praw.Reddit(user_agent = "Comment scraper testing by u/uva_cs_dev")                                    
     r.login()                                                                                                  
-    
     for sub in SUBREDDIT_LIST:
         STATE_current_subreddit = sub
         CURRENT_SUBREDDIT = sub
+        print "Starting... " + str(sub)
         if not os.path.isdir("./data/"+str(CURRENT_SUBREDDIT)):
             init_subreddit_directory(CURRENT_SUBREDDIT)
         subreddit = r.get_subreddit(CURRENT_SUBREDDIT) 
@@ -157,7 +155,6 @@ try:
             f.close()
 
         STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
-        
         f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
         all_lines = f.read().splitlines()
         f.close()
@@ -165,40 +162,30 @@ try:
         lines = [x.split(",")[0] for x in all_lines]
         lines_times = [x.split(",")[1] for x in all_lines]
         lines_check = lines[(len(lines)-100):]
-
         f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","a")
         for s in subreddit.get_new(limit=100):
             if not ("t3_" + str(s.id)) in lines_check:
                 os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
                 f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
         f.close()
-        
         count = 0
         while count < len(lines_times[STATE_current_list_number:]) and time.time() - float(lines_times[STATE_current_list_number:][count]) > POST_HOUR_DELAY*3600:
-            count = count + 1
-        STATE_lines_to_write.extend(lines[STATE_current_list_number:][:count])
+            count += 1
+        lines_to_write = lines[STATE_current_list_number:][:count]
+        submissions = r.get_submissions(lines_to_write[:100])
+        for s in submissions:
+            write_submission(s)
+            STATE_current_count +=1 
+        STATE_current_count = 0
+        
+        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
+        f.write(str(STATE_current_list_number+count))
+        f.close()
         STATE_current_list_number += count
-        open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w").write(str(STATE_current_list_number))
-        print STATE_lines_to_write
-        print "ok"
-        while len(STATE_lines_to_write) >= 100:
-            print "1"
-            submissions = r.get_submissions(STATE_lines_to_write[:100])
-            print "2"
-            STATE_lines_to_write = STATE_lines_to_write[100:]
-            print "3"
-            for s in submissions:
-                write_submission(s)
-            print "4"
-        print "5"
+
     try:
         os.remove(PID_FILE_NAME)  
     except:
-        print "something went very wrong!"
+        print "what>?"
 except:
-    #in the event of a crash end gracefully!
-    os.remove(PID_FILE_NAME)
-    submissions = r.get_submissions(STATE_lines_to_write)
-    for s in submissions:
-        write_submission(s)
-    print "end"
+    cleanup()
