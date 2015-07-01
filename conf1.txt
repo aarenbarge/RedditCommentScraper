@@ -1,0 +1,2 @@
+SUBREDDIT_LIST = worldnews , funny , videos , movies , gaming , gifs , sports , anime , runescape , pics , aww , news , politics , nba
+HOUR_DELAY = 1

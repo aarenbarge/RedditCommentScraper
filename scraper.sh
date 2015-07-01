@@ -8,5 +8,4 @@ while true; do
   else
     rm ./tmp/pidfiles/mydaemon2.pid
   fi
-  sleep 15
 done

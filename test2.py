@@ -129,7 +129,7 @@ def init_subreddit_directory(CURRENT_SUBREDDIT):
     start_file.close()
 
 
-
+start = time.time()
 pid = str(os.getpid())
 if os.path.isfile(PID_FILE_NAME):
     print "%s already exists, exiting" % PID_FILE_NAME
@@ -150,7 +150,9 @@ for sub in SUBREDDIT_LIST:
     print "2"
     STATE_current_subreddit = sub
     CURRENT_SUBREDDIT = sub
-    print "Starting... " + str(sub)
+    f = open("lognames.txt","a")
+    f.write("Starting... " + str(sub))
+    f.close()
     if not os.path.isdir("./data/"+str(CURRENT_SUBREDDIT)):
         init_subreddit_directory(CURRENT_SUBREDDIT)
     subreddit = r.get_subreddit(CURRENT_SUBREDDIT)
@@ -208,6 +210,13 @@ for sub in SUBREDDIT_LIST:
 
 #    try:
 os.remove(PID_FILE_NAME)
+end = time.time()
+f = open("lognames.txt","a")
+f.write("\n\n")
+f.close()
+f = open("logtimes.txt","a")
+f.write(str(start) + ": " + str(end - start) + "\n")
+f.close()
 #    except:
 print "what>?"
 #except:
