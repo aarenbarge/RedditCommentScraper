@@ -2,8 +2,9 @@ import os
 import sys
 import praw #need to install this on the server!
 import time
-from pprint import pprint, pformat
+from pprint import pprint, pformat #need to install on the server!
 import shutil
+import logging
 
 ###########################################################################
 ##                                                                       ##
@@ -11,9 +12,6 @@ import shutil
 ##                                                                       ##
 ###########################################################################
 
-#This is a comment
-
-#Global Variables
 PID_FILE_NAME = "./tmp/pidfiles/mydaemon2.pid" # Default value
 SUBREDDIT_LIST = ["worldnews"] # Default value
 DEFAULT_LIST_BUFFER_VAL = 0
@@ -28,31 +26,41 @@ STATE_cleaned = 0
 STATE_most_recent_id = ""
 
 def cleanup():
+    logging.info('starting cleanup()')
     global STATE_cleaned
     global STATE_current_subreddit
     global STATE_current_count
 
     if STATE_cleaned != 0:
+        logging.info('cleanup() called again, exiting')
         return
     STATE_cleaned = 1
-    f = open("./data/"+str(STATE_current_subreddit) + "/bin/start.txt","w")
-    f.write(str(STATE_current_list_number+STATE_current_count))
-    f.close()
-    os.remove(PID_FILE_NAME)
+    logging.info('starting cleanup()')
+    if os.path.isfile(PID_FILE_NAME):
+        logging.info('deleted PID file on exit')
+        os.remove(PID_FILE_NAME)
+    else:
+        logging.info('could not delete PID file on exit, was not found')
+    try:
+        f = open("./data/"+str(STATE_current_subreddit) + "/bin/start.txt","w")
+        f.write(str(STATE_current_list_number+STATE_current_count))
+        f.close()
+    except:
+        logging.warning('Unable to write [ %d ] to ./data/%s/bin/start.txt on exit',STATE_current_list_number+STATE_current_count,STATE_current_subreddit)
+    logging.info('finished cleanup()')
     sys.exit()
 
 def write_submission(sub):
-    # SHOULD CHECK WHETHER IT HAS BEEN WRITTEN BEFORE
     global STATE_current_subreddit
-
+    logging.info('writing submission id: %s to subreddit: %s', str(sub.id), str(STATE_current_subreddit))
     if os.path.isfile("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt"):
+        logging.warning('id: %s has been written before, exiting', str(sub.id))
         return
     else:
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("INPROGRESS")
         f.close()
     try:
-        #write a generic file
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/pprint.txt","w")
         f.write(pformat(vars(sub)))
         f.close()
@@ -82,36 +90,41 @@ def write_submission(sub):
         f = open("./data/" + str(STATE_current_subreddit) + "/posts/" + str(sub.id) + "/status.txt","w")
         f.write("FINISHED")
         f.close()
+        logging.info('Writing finishd succesfully id: %s', str(sub.id))
 
     except:
+        e = sys.exc_info()[0]
+        logging.error( "Error: %s in write_submission id: %d", str(e), int(sub.id) )
         cleanup()
 
 def get_configuration():
+    global LOG_FILE_NAME
+    logging.basicConfig(filename='./logs/general_logfile.log',level=logging.DEBUG)
+    logging.info('\n\n\nNEW LOGGING CREATED\n')
     for line in open('conf.txt', 'r').read().split('\n'):
         hd , tl = line.split('=')
-        print "here"
-        #SUBREDDIT_LIST
+
+        #GET LIST OF SUBREDDITS
         if hd.strip().upper() == 'SUBREDDIT_LIST':
-            print "hi"
+            logging.info('overriding default subreddit list...')
             if tl.strip():
-                print "ok"
                 global SUBREDDIT_LIST
                 SUBREDDIT_LIST = []
-                print tl.strip().split(',')
                 for val in tl.strip().split(','):
-                    print "34"
+                    logging.info('(+) added sub: %s to the list of subreddits',val.strip().lower())
                     SUBREDDIT_LIST.append(val.strip().lower())
-        print "75"
+
         #POST_HOUR_DELAY
         if hd.strip().upper() == 'HOUR_DELAY':
-            print "22"
+            logging.info('overriding default hour display...')
             if tl.strip():
-                print "91"
                 global POST_HOUR_DELAY
-                print "kk"
+                logging.info('setting hour display to %d', int(tl.strip()))
                 POST_HOUR_DELAY = int(tl.strip())
-        print POST_HOUR_DELAY
-        print SUBREDDIT_LIST
+
+        #LOG VALUES THEN EXIT
+        logging.info('finished configuration:\n    HOUR_DELAY: %s\n    SUBREDDIT_LIST: %s',POST_HOUR_DELAY,', '.join(SUBREDDIT_LIST))
+        return
 
 def init_subreddit_directory(CURRENT_SUBREDDIT):
 
@@ -139,26 +152,26 @@ else:
 user = sys.argv[1]
 pas = sys.argv[2]
 
-#try:
-print "1"
 get_configuration()
-print "2"
 r = praw.Reddit(user_agent = "Comment scraper testing by u/uva_cs_dev")
-print user, pas
 r.login(username=user, password=pas)
+
 for sub in SUBREDDIT_LIST:
-    print "2"
+    print "Starting " + str(sub)
     STATE_current_subreddit = sub
     CURRENT_SUBREDDIT = sub
     f = open("lognames.txt","a")
     f.write("Starting... " + str(sub))
     f.close()
+    logging.info('Starting new subreddit: %s', str(sub) )
     if not os.path.isdir("./data/"+str(CURRENT_SUBREDDIT)):
         init_subreddit_directory(CURRENT_SUBREDDIT)
+        logging.info('Created new directory for subreddit: %s', str(sub) )
     subreddit = r.get_subreddit(CURRENT_SUBREDDIT)
-    print "3"
     STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
+    logging.info('The current list number for sub: %s is %d', str(sub), STATE_current_list_number)
     if STATE_current_list_number > 1000:
+        logging.info('The list is being refactored')
         f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
         lines = f.read().splitlines()
         f.close()
@@ -169,7 +182,7 @@ for sub in SUBREDDIT_LIST:
         f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
         f.write("0")
         f.close()
-    print "4"
+        logging.info('The list finished refactoring')
     STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
     f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
     all_lines = f.read().splitlines()
@@ -178,37 +191,45 @@ for sub in SUBREDDIT_LIST:
     lines_times = [x.split(",")[1] for x in all_lines]
     lines_check = lines
     f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","a")
-    print lines_check
-    for s in subreddit.get_new(limit=100):
-        print "href"
-        print str(s.id)
-        if not ("t3_" + str(s.id)) in lines_check:
-            print "333333"
-            os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
-            print "55555555"
-            f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
-            print "00000"
-        print "oeeei"
-    print "oijf"
-    f.close()
-    print "5"
-    count = 0
-    while count < len(lines_times[STATE_current_list_number:]) and time.time() - float(lines_times[STATE_current_list_number:][count]) > POST_HOUR_DELAY*3600:
-        count += 1
-    lines_to_write = lines[STATE_current_list_number:][:count]
-    submissions = r.get_submissions(lines_to_write[:100])
-    print "6"
-    for s in submissions:
-        write_submission(s)
-        STATE_current_count +=1
-    STATE_current_count = 0
-    print "7"
-    f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
-    f.write(str(STATE_current_list_number+count))
-    f.close()
-    STATE_current_list_number += count
+    logging.info('finished reading in list of ids with value: [ ' + ", ".join(lines) + "]")
+    try:
+        logging.info('begging routine to get new posts')
+        for s in subreddit.get_new(limit=100):
+            if not ("t3_" + str(s.id)) in lines_check:
+                os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
+                f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
+                logging.info('(+) id: %s added to the list for sub: %s', str(s.id), str(CURRENT_SUBREDDIT))
+            else:
+                break
+        f.close()
+        logging.info('added all new posts to list')
 
-#    try:
+        logging.info('starting routine to scrape adequately old posts')
+        count = 0
+        while count < len(lines_times[STATE_current_list_number:]) and time.time() - float(lines_times[STATE_current_list_number:][count]) > POST_HOUR_DELAY*3600:
+            count += 1
+        logging.info('number of posts to write: %d', count)
+        lines_to_write = lines[STATE_current_list_number:][:count]
+        logging.info('list of submission ids to write, subreddit: %s list: [ ' + ", ".join(lines_to_write) + "]", CURRENT_SUBREDDIT)
+        submissions = r.get_submissions(lines_to_write[:100])
+        for s in submissions:
+            logging.info('beginning to write submission id: %s', str(s.id))
+            write_submission(s)
+            STATE_current_count +=1
+        STATE_current_count = 0
+        logging.info('finished writing all submissions')
+        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
+        f.write(str(STATE_current_list_number+count))
+        f.close()
+        logging.info('finished updating current list number in subreddit: %s', CURRENT_SUBREDDIT)
+        #STATE_current_list_number += count
+    except:
+        print "failed"
+        logging.error('subreddit: %s returned an error, should be deleted from the list', CURRENT_SUBREDDIT)
+        f = open("invalid_subs.txt","a")
+        f.write(CURRENT_SUBREDDIT + "\n")
+        f.close()
+
 os.remove(PID_FILE_NAME)
 end = time.time()
 f = open("lognames.txt","a")
@@ -217,7 +238,3 @@ f.close()
 f = open("logtimes.txt","a")
 f.write(str(start) + ": " + str(end - start) + "\n")
 f.close()
-#    except:
-print "what>?"
-#except:
-#    cleanup()
