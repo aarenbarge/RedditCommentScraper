@@ -126,20 +126,40 @@ def get_configuration():
         logging.info('finished configuration:\n    HOUR_DELAY: %s\n    SUBREDDIT_LIST: %s',POST_HOUR_DELAY,', '.join(SUBREDDIT_LIST))
         return
 
-def init_subreddit_directory(CURRENT_SUBREDDIT):
+def init_subreddit_directory(CURRENT_SUBREDDIT, r):
+    try:
+        os.makedirs("./data/"+str(CURRENT_SUBREDDIT))
+        os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/bin")
+        os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts")
 
-    os.makedirs("./data/"+str(CURRENT_SUBREDDIT))
-    os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/bin")
-    os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts")
+        list_file = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt", "w")
 
-    list_file = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt", "w")
-    for i in range (0,DEFAULT_LIST_BUFFER_VAL):
-        list_file.write("xxxxx\n")
-    list_file.close()
+        subreddit = r.get_subreddit(CURRENT_SUBREDDIT)
+        subs = subreddit.get_new(limit=100)
+        first_time = -1.0
+        last_time = 0.0
+        for s in subs:
+            if first_time < 0:
+                first_time = s.created_utc
+            last_time = s.created_utc
+            os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
+            list_file.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
+        list_file.close()
 
-    start_file = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt", "w")
-    start_file.write("0")
-    start_file.close()
+        start_file = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt", "w")
+        start_file.write("0")
+        start_file.close()
+
+        time_file = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/time.txt", "w")
+        time_file.write(str((first_time - last_time)/1.5))
+        time_file.close()
+
+        last_time = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/lasttime.txt", "w")
+        last_time.write(str(time.time()))
+        last_time.close()
+    except:
+        shutil.rmtree("./data/" + str(CURRENT_SUBREDDIT))
+
 
 
 start = time.time()
@@ -160,81 +180,89 @@ for sub in SUBREDDIT_LIST:
     print "Starting " + str(sub)
     STATE_current_subreddit = sub
     CURRENT_SUBREDDIT = sub
-    f = open("lognames.txt","a")
-    f.write("Starting... " + str(sub))
-    f.close()
+
     logging.info('Starting new subreddit: %s', str(sub) )
     if not os.path.isdir("./data/"+str(CURRENT_SUBREDDIT)):
-        init_subreddit_directory(CURRENT_SUBREDDIT)
+        init_subreddit_directory(CURRENT_SUBREDDIT, r)
         logging.info('Created new directory for subreddit: %s', str(sub) )
-    subreddit = r.get_subreddit(CURRENT_SUBREDDIT)
-    STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
-    logging.info('The current list number for sub: %s is %d', str(sub), STATE_current_list_number)
-    if STATE_current_list_number > 1000:
-        logging.info('The list is being refactored')
-        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
-        lines = f.read().splitlines()
-        f.close()
-        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","w")
-        for line in lines[STATE_current_list_number:]:
-            f.write(line + "\n")
-        f.close()
-        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
-        f.write("0")
-        f.close()
-        logging.info('The list finished refactoring')
-    STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
-    f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
-    all_lines = f.read().splitlines()
-    f.close()
-    lines = [x.split(",")[0] for x in all_lines]
-    lines_times = [x.split(",")[1] for x in all_lines]
-    lines_check = lines
-    f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","a")
-    logging.info('finished reading in list of ids with value: [ ' + ", ".join(lines) + "]")
+    old_time = time.time()
+    req_time = 1000000000000.0
     try:
-        logging.info('begging routine to get new posts')
-        for s in subreddit.get_new(limit=100):
-            if not ("t3_" + str(s.id)) in lines_check:
-                os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
-                f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
-                logging.info('(+) id: %s added to the list for sub: %s', str(s.id), str(CURRENT_SUBREDDIT))
-            else:
-                break
-        f.close()
-        logging.info('added all new posts to list')
-
-        logging.info('starting routine to scrape adequately old posts')
-        count = 0
-        while count < len(lines_times[STATE_current_list_number:]) and time.time() - float(lines_times[STATE_current_list_number:][count]) > POST_HOUR_DELAY*3600:
-            count += 1
-        logging.info('number of posts to write: %d', count)
-        lines_to_write = lines[STATE_current_list_number:][:count]
-        logging.info('list of submission ids to write, subreddit: %s list: [ ' + ", ".join(lines_to_write) + "]", CURRENT_SUBREDDIT)
-        submissions = r.get_submissions(lines_to_write[:100])
-        for s in submissions:
-            logging.info('beginning to write submission id: %s', str(s.id))
-            write_submission(s)
-            STATE_current_count +=1
-        STATE_current_count = 0
-        logging.info('finished writing all submissions')
-        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
-        f.write(str(STATE_current_list_number+count))
-        f.close()
-        logging.info('finished updating current list number in subreddit: %s', CURRENT_SUBREDDIT)
-        #STATE_current_list_number += count
+        old_time = float(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/lasttime.txt","r").read())
+        req_time = float(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/time.txt","r").read())
     except:
-        print "failed"
-        logging.error('subreddit: %s returned an error, should be deleted from the list', CURRENT_SUBREDDIT)
-        f = open("invalid_subs.txt","a")
-        f.write(CURRENT_SUBREDDIT + "\n")
+        shutil.rmtree("./data/" + str(CURRENT_SUBREDDIT))
+        init_subreddit_directory(CURRENT_SUBREDDIT, r)
+
+    if time.time() - old_time > req_time:
+        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/lasttime.txt","r")
+        f.write(str(time.time()))
         f.close()
+        subreddit = r.get_subreddit(CURRENT_SUBREDDIT)
+        STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
+        logging.info('The current list number for sub: %s is %d', str(sub), STATE_current_list_number)
+        if STATE_current_list_number > 1000:
+            logging.info('The list is being refactored')
+            f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
+            lines = f.read().splitlines()
+            f.close()
+            f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","w")
+            for line in lines[STATE_current_list_number:]:
+                f.write(line + "\n")
+            f.close()
+            f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
+            f.write("0")
+            f.close()
+            logging.info('The list finished refactoring')
+        STATE_current_list_number = int(open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","r").read())
+        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","r")
+        all_lines = f.read().splitlines()
+        f.close()
+        lines = [x.split(",")[0] for x in all_lines]
+        lines_times = [x.split(",")[1] for x in all_lines]
+        lines_check = lines
+        f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/list.txt","a")
+        logging.info('finished reading in list of ids with value: [ ' + ", ".join(lines) + "]")
+        try:
+            logging.info('begging routine to get new posts')
+            for s in subreddit.get_new(limit=100):
+                if not ("t3_" + str(s.id)) in lines_check:
+                    os.makedirs("./data/"+str(CURRENT_SUBREDDIT)+"/posts/" +str(s.id))
+                    f.write("t3_" + str(s.id) + "," + str(time.time()) + "\n")
+                    logging.info('(+) id: %s added to the list for sub: %s', str(s.id), str(CURRENT_SUBREDDIT))
+                else:
+                    break
+            f.close()
+            logging.info('added all new posts to list')
+
+            logging.info('starting routine to scrape adequately old posts')
+            count = 0
+            while count < len(lines_times[STATE_current_list_number:]) and time.time() - float(lines_times[STATE_current_list_number:][count]) > POST_HOUR_DELAY*3600:
+                count += 1
+            logging.info('number of posts to write: %d', count)
+            lines_to_write = lines[STATE_current_list_number:][:count]
+            logging.info('list of submission ids to write, subreddit: %s list: [ ' + ", ".join(lines_to_write) + "]", CURRENT_SUBREDDIT)
+            submissions = r.get_submissions(lines_to_write[:100])
+            for s in submissions:
+                logging.info('beginning to write submission id: %s', str(s.id))
+                write_submission(s)
+                STATE_current_count +=1
+            STATE_current_count = 0
+            logging.info('finished writing all submissions')
+            f = open("./data/"+str(CURRENT_SUBREDDIT) + "/bin/start.txt","w")
+            f.write(str(STATE_current_list_number+count))
+            f.close()
+            logging.info('finished updating current list number in subreddit: %s', CURRENT_SUBREDDIT)
+            #STATE_current_list_number += count
+        except:
+            print "failed"
+            logging.error('subreddit: %s returned an error, should be deleted from the list', CURRENT_SUBREDDIT)
+            f = open("invalid_subs.txt","a")
+            f.write(CURRENT_SUBREDDIT + "\n")
+            f.close()
 
 os.remove(PID_FILE_NAME)
 end = time.time()
-f = open("lognames.txt","a")
-f.write("\n\n")
-f.close()
 f = open("logtimes.txt","a")
 f.write(str(start) + ": " + str(end - start) + "\n")
 f.close()
